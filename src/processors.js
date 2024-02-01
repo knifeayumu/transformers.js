@@ -595,17 +595,17 @@ export class ImageFeatureExtractor extends FeatureExtractor {
         /** @type {HeightWidth} */
         const reshaped_input_size = [image.height, image.width];
 
-        let pixelData = Float32Array.from(image.data);
-
-        if (this.do_rescale) {
-            this.rescale(pixelData);
-        }
-
         // Convert image to RGB if specified in config.
         if (do_convert_rgb ?? this.do_convert_rgb) {
             image = image.rgb();
         } else if (do_convert_grayscale) {
             image = image.grayscale();
+        }
+
+        let pixelData = Float32Array.from(image.data);
+
+        if (this.do_rescale) {
+            this.rescale(pixelData);
         }
 
         let imgDims = [image.height, image.width, image.channels];

@@ -596,7 +596,6 @@ export class ImageFeatureExtractor extends FeatureExtractor {
         const reshaped_input_size = [image.height, image.width];
 
         let pixelData = Float32Array.from(image.data);
-        let imgDims = [image.height, image.width, image.channels];
 
         if (this.do_rescale) {
             this.rescale(pixelData);
@@ -608,6 +607,8 @@ export class ImageFeatureExtractor extends FeatureExtractor {
         } else if (do_convert_grayscale) {
             image = image.grayscale();
         }
+
+        let imgDims = [image.height, image.width, image.channels];
 
         if (do_normalize ?? this.do_normalize) {
             let image_mean = this.image_mean;

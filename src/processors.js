@@ -553,7 +553,7 @@ export class ImageFeatureExtractor extends FeatureExtractor {
     async preprocess(image, {
         do_normalize = null,
         do_pad = null,
-        do_convert_rgb = null,
+        do_convert_rgb = true,
         do_convert_grayscale = null,
     } = {}) {
         if (this.do_crop_margin) {

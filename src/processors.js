@@ -564,13 +564,6 @@ export class ImageFeatureExtractor extends FeatureExtractor {
 
         const [srcWidth, srcHeight] = image.size; // original image size
 
-        // Convert image to RGB if specified in config.
-        if (do_convert_rgb ?? this.do_convert_rgb) {
-            image = image.rgb();
-        } else if (do_convert_grayscale) {
-            image = image.grayscale();
-        }
-
         // TODO:
         // For efficiency reasons, it might be best to merge the resize and center crop operations into one.
 
@@ -607,6 +600,13 @@ export class ImageFeatureExtractor extends FeatureExtractor {
 
         if (this.do_rescale) {
             this.rescale(pixelData);
+        }
+
+        // Convert image to RGB if specified in config.
+        if (do_convert_rgb ?? this.do_convert_rgb) {
+            image = image.rgb();
+        } else if (do_convert_grayscale) {
+            image = image.grayscale();
         }
 
         if (do_normalize ?? this.do_normalize) {

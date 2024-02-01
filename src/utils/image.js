@@ -11,9 +11,9 @@
 import { isString } from './core.js';
 import { getFile } from './hub.js';
 import { env } from '../env.js';
+import Jimp from 'jimp';
 
 // Will be empty (or not used) if running in browser or web-worker
-import sharp from 'sharp';
 
 const BROWSER_ENV = typeof self !== 'undefined';
 const WEBWORKER_ENV = BROWSER_ENV && self.constructor.name === 'DedicatedWorkerGlobalScope';
@@ -32,26 +32,30 @@ if (BROWSER_ENV) {
     loadImageFunction = self.createImageBitmap;
     ImageDataClass = self.ImageData;
 
-} else if (sharp) {
+} else {
     // Running in Node.js, electron, or other non-browser environment
 
-    loadImageFunction = async (/**@type {sharp.Sharp}*/img) => {
-        const metadata = await img.metadata();
-        const rawChannels = metadata.channels;
+    Jimp.appendConstructorOption(
+        "fromBitmap",
+        (args) => args.data,
+        function (resolve, reject, args) {
+            this.parseBitmap(Buffer.from(args.data), '', (err) => {
+                if (err) {
+                    reject(err);
+                }
+                resolve();
+            });
+        });
 
-        let { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+    loadImageFunction = async (/**@type {Jimp}*/img) => {
+        const width = img.bitmap.width;
+        const height = img.bitmap.height;
+        const data = img.bitmap.data;
 
-        const newImage = new RawImage(new Uint8ClampedArray(data), info.width, info.height, info.channels);
-        if (rawChannels !== undefined && rawChannels !== info.channels) {
-            // Make sure the new image has the same number of channels as the input image.
-            // This is necessary for grayscale images.
-            newImage.convert(rawChannels);
-        }
+        const newImage = new RawImage(new Uint8ClampedArray(data), width, height, 4);
         return newImage;
     }
 
-} else {
-    throw new Error('Unable to load image processing library.');
 }
 
 
@@ -154,8 +158,8 @@ export class RawImage {
             return new this(ctx.getImageData(0, 0, img.width, img.height).data, img.width, img.height, 4);
 
         } else {
-            // Use sharp.js to read (and possible resize) the image.
-            let img = sharp(await blob.arrayBuffer());
+            let ab = await blob.arrayBuffer();
+            let img = await Jimp.read(Buffer.from(ab));
 
             return await loadImageFunction(img);
         }
@@ -319,40 +323,8 @@ export class RawImage {
             return resizedImage.convert(numChannels);
 
         } else {
-            // Create sharp image from raw data, and resize
-            let img = this.toSharp();
-
-            switch (resampleMethod) {
-                case 'box':
-                case 'hamming':
-                    if (resampleMethod === 'box' || resampleMethod === 'hamming') {
-                        console.warn(`Resampling method ${resampleMethod} is not yet supported. Using bilinear instead.`);
-                        resampleMethod = 'bilinear';
-                    }
-
-                case 'nearest':
-                case 'bilinear':
-                case 'bicubic':
-                    // Perform resizing using affine transform. 
-                    // This matches how the python Pillow library does it.
-                    img = img.affine([width / this.width, 0, 0, height / this.height], {
-                        interpolator: resampleMethod
-                    });
-                    break;
-
-                case 'lanczos':
-                    // https://github.com/python-pillow/Pillow/discussions/5519
-                    // https://github.com/lovell/sharp/blob/main/docs/api-resize.md
-                    img = img.resize({
-                        width, height,
-                        fit: 'fill',
-                        kernel: 'lanczos3', // PIL Lanczos uses a kernel size of 3 
-                    });
-                    break;
-
-                default:
-                    throw new Error(`Resampling method ${resampleMethod} is not supported.`);
-            }
+            let img = await this.toJimp();
+            img = img.resize(width, height);
 
             return await loadImageFunction(img);
         }
@@ -398,7 +370,8 @@ export class RawImage {
             return paddedImage.convert(numChannels);
 
         } else {
-            let img = this.toSharp().extend({ left, right, top, bottom });
+            let img = await this.toJimp();
+            img = img.contain(this.width + left + right, this.height + top + bottom, Jimp.HORIZONTAL_ALIGN_LEFT | Jimp.VERTICAL_ALIGN_TOP);
             return await loadImageFunction(img);
         }
     }
@@ -507,65 +480,8 @@ export class RawImage {
             return resizedImage.convert(numChannels);
 
         } else {
-            // Create sharp image from raw data
-            let img = this.toSharp();
-
-            if (width_offset >= 0 && height_offset >= 0) {
-                // Cropped image lies entirely within the original image
-                img = img.extract({
-                    left: Math.floor(width_offset),
-                    top: Math.floor(height_offset),
-                    width: crop_width,
-                    height: crop_height,
-                })
-            } else if (width_offset <= 0 && height_offset <= 0) {
-                // Cropped image lies entirely outside the original image,
-                // so we add padding
-                let top = Math.floor(-height_offset);
-                let left = Math.floor(-width_offset);
-                img = img.extend({
-                    top: top,
-                    left: left,
-
-                    // Ensures the resulting image has the desired dimensions
-                    right: crop_width - this.width - left,
-                    bottom: crop_height - this.height - top,
-                });
-            } else {
-                // Cropped image lies partially outside the original image.
-                // We first pad, then crop.
-
-                let y_padding = [0, 0];
-                let y_extract = 0;
-                if (height_offset < 0) {
-                    y_padding[0] = Math.floor(-height_offset);
-                    y_padding[1] = crop_height - this.height - y_padding[0];
-                } else {
-                    y_extract = Math.floor(height_offset);
-                }
-
-                let x_padding = [0, 0];
-                let x_extract = 0;
-                if (width_offset < 0) {
-                    x_padding[0] = Math.floor(-width_offset);
-                    x_padding[1] = crop_width - this.width - x_padding[0];
-                } else {
-                    x_extract = Math.floor(width_offset);
-                }
-
-                img = img.extend({
-                    top: y_padding[0],
-                    bottom: y_padding[1],
-                    left: x_padding[0],
-                    right: x_padding[1],
-                }).extract({
-                    left: x_extract,
-                    top: y_extract,
-                    width: crop_width,
-                    height: crop_height,
-                })
-            }
-
+            let img = await this.toJimp();
+            img = img.contain(crop_width, crop_height, Jimp.HORIZONTAL_ALIGN_CENTER | Jimp.VERTICAL_ALIGN_MIDDLE);
             return await loadImageFunction(img);
         }
     }
@@ -685,22 +601,23 @@ export class RawImage {
             throw new Error('Unable to save the image because filesystem is disabled in this environment.')
 
         } else {
-            const img = this.toSharp();
-            return await img.toFile(path);
+            this.toJimp().then((img) => {
+                img.write(path);
+            });
         }
     }
 
-    toSharp() {
+    /**
+     * 
+     * @returns {Promise<Jimp>}
+     */
+    async toJimp() {
         if (BROWSER_ENV) {
-            throw new Error('toSharp() is only supported in server-side environments.')
+            throw new Error('toJimp() is only supported in server-side environments.')
         }
 
-        return sharp(this.data, {
-            raw: {
-                width: this.width,
-                height: this.height,
-                channels: this.channels
-            }
-        });
+        const img = await Jimp.read(this.width, this.height);
+        img.bitmap.data = Buffer.from(this.data);
+        return img;
     }
 }

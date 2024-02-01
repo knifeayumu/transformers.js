@@ -1,5 +1,5 @@
 {
-  "name": "@xenova/transformers",
+  "name": "sillytavern-transformers",
   "version": "2.12.1",
   "description": "State-of-the-art Machine Learning for the web. Run 🤗 Transformers directly in your browser, with no need for a server!",
   "main": "./src/transformers.js",
@@ -39,11 +39,10 @@
   "homepage": "https://github.com/xenova/transformers.js#readme",
   "dependencies": {
     "onnxruntime-web": "1.14.0",
-    "sharp": "^0.32.0",
-    "@huggingface/jinja": "^0.1.0"
+    "@huggingface/jinja": "^0.1.0",
+    "jimp": "^0.22.10"
   },
   "optionalDependencies": {
-    "onnxruntime-node": "1.14.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.1",
